@@ -1,4 +1,4 @@
-name: Build YouTube Fusion APK
+name: Build YouTube Fusion
 
 on:
   workflow_dispatch:
@@ -9,51 +9,110 @@ permissions:
   contents: read
 
 jobs:
-  inspect-and-patch:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Java 21
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      - name: Download base YouTube APK from release
+      - name: Download exact base APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download base --repo "${GITHUB_REPOSITORY}" --pattern '*.apk' --dir input
-          ls -lh input
-
-      - name: Download Morphe Desktop CLI and patch bundle
-        run: |
-          mkdir -p tools patches
-          curl -fL https://github.com/MorpheApp/morphe-desktop/releases/download/v2.3.0/morphe-desktop-2.3.0-all.jar -o tools/morphe.jar
-          curl -fL https://github.com/MorpheApp/morphe-patches/releases/download/v2.3.0/patches-2.3.0.mpp -o patches/patches.mpp
-          ls -lh tools/morphe.jar patches/patches.mpp
-
-      - name: Inspect available YouTube patches
-        run: |
-          java -jar tools/morphe.jar list-patches --patches patches/patches.mpp --filter-package-name com.google.android.youtube --with-versions --with-options > patch-list.txt
-          cat patch-list.txt
-
-      - name: Patch YouTube with ad blocking
-        run: |
+          mkdir -p input tools work output
+          gh release download base --repo "$GITHUB_REPOSITORY" --pattern '*.apk' --dir input
           APK="$(find input -maxdepth 1 -name '*.apk' -print -quit)"
           test -n "$APK"
-          java -jar tools/morphe.jar patch --patches patches/patches.mpp --enable "Hide ads" --enable "Custom branding" --options customName="YouTube Fusion" --out output/YouTube-Fusion.apk "$APK"
+          sha256sum "$APK" | tee work/input.sha256
 
-      - name: Upload diagnostic and APK artifacts
+      - name: Install JADX and Apktool
+        run: |
+          JAD=$(curl -fsSL https://api.github.com/repos/skylot/jadx/releases/latest)
+          JAD_URL=$(echo "$JAD" | jq -r '.assets[] | select(.name | test("jadx-[0-9.]+\\.zip$")) | .browser_download_url' | head -n1)
+          test -n "$JAD_URL"
+          curl -fL "$JAD_URL" -o tools/jadx.zip
+          mkdir -p tools/jadx
+          unzip -q tools/jadx.zip -d tools/jadx
+          JADXC="$(find tools/jadx -type f -path '*/bin/jadx' -print -quit)"
+          test -n "$JADXC"
+          echo "JADX=$JADXC" >> "$GITHUB_ENV"
+          sudo apt-get update
+          sudo apt-get install -y apktool zipalign apksigner aapt
+
+      - name: Decompile with JADX and decode with Apktool
+        run: |
+          APK="$(find input -maxdepth 1 -name '*.apk' -print -quit)"
+          "$JADX" --show-bad-code -d work/jadx "$APK" 2>&1 | tee work/jadx.log
+          apktool d -f "$APK" -o work/apktool
+          grep -RniE 'ad.?service|ad.?overlay|promoted|sponsored|advertis' work/jadx/sources > work/ad-symbol-hits.txt || true
+          zip -qr output/jadx-source.zip work/jadx work/ad-symbol-hits.txt
+          zip -qr output/apktool-project.zip work/apktool
+
+      - name: Download Morphe patcher and patches
+        run: |
+          curl -fL https://github.com/MorpheApp/morphe-desktop/releases/download/v2.3.0/morphe-desktop-2.3.0-all.jar -o tools/morphe.jar
+          curl -fL https://github.com/MorpheApp/morphe-patches/releases/download/v2.4.0-dev.7/patches-2.4.0-dev.7.mpp -o tools/patches.mpp
+          java -jar tools/morphe.jar list-patches --patches tools/patches.mpp --filter-package-name com.google.android.youtube --with-versions --with-options | tee work/patch-list.txt
+
+      - name: Apply compatible ad patches
+        run: |
+          APK="$(find input -maxdepth 1 -name '*.apk' -print -quit)"
+          if ! grep -q 'Hide ads' work/patch-list.txt; then
+            echo 'Hide ads patch is absent from this bundle.' | tee output/patch-report.txt
+            exit 1
+          fi
+          if ! grep -A8 -B2 'Hide ads' work/patch-list.txt | grep -q '21.13.164'; then
+            echo 'Hide ads patch does not explicitly support YouTube 21.13.164; refusing to publish a fake ad-free APK.' | tee output/patch-report.txt
+            exit 1
+          fi
+          java -jar tools/morphe.jar patch --patches tools/patches.mpp --enable "Hide ads" --enable "Custom branding" --options customName="YouTube Fusion" --out work/morphe-patched.apk "$APK" 2>&1 | tee work/patch.log
+          if ! grep -Eq 'Applying [1-9][0-9]* patches' work/patch.log; then
+            echo 'No patches were applied; refusing to publish.' | tee output/patch-report.txt
+            exit 1
+          fi
+          cp work/patch.log output/patch-report.txt
+
+      - name: Rewrite package and app label, rebuild and sign
+        run: |
+          apktool d -f work/morphe-patched.apk -o work/rename
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          p='work/rename/AndroidManifest.xml'
+          tree=ET.parse(p)
+          root=tree.getroot()
+          root.set('package','Fusion.YouTube')
+          ns='{http://schemas.android.com/apk/res/android}'
+          app=root.find('application')
+          if app is None:
+              raise SystemExit('Manifest has no application node')
+          app.set(ns+'label','YouTube Fusion')
+          tree.write(p,encoding='utf-8',xml_declaration=True)
+          PY
+          apktool b work/rename -o work/unsigned.apk
+          zipalign -f 4 work/unsigned.apk work/aligned.apk
+          keytool -genkeypair -keystore work/fusion.keystore -storepass fusionbuild -keypass fusionbuild -alias fusion -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=YouTube Fusion"
+          apksigner sign --ks work/fusion.keystore --ks-pass pass:fusionbuild --key-pass pass:fusionbuild --out output/YouTube-Fusion.apk work/aligned.apk
+          apksigner verify --verbose output/YouTube-Fusion.apk
+          aapt dump badging output/YouTube-Fusion.apk | tee work/badging.txt
+          grep -q "package: name='Fusion.YouTube'" work/badging.txt
+          grep -q "application-label:'YouTube Fusion'" work/badging.txt
+
+      - name: Upload APK and decompiled source
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: YouTube-Fusion-build-${{ github.run_number }}
+          name: YouTube-Fusion-${{ github.run_number }}
           path: |
-            output/*.apk
-            patch-list.txt
+            output/*
+            work/input.sha256
+            work/patch-list.txt
+            work/ad-symbol-hits.txt
+            work/jadx.log
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30

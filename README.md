@@ -1,59 +1,25 @@
 # YouTube Fusion
 
-An experimental NPatch / libxposed module (API 102) for a separately patched YouTube APK.
-
-**Current state: buildable module scaffold; ad blocking and APK package rewriting are not implemented yet.** The selected input is the user's YouTube 21.13.164 APK. The intended output package ID is `youtube.fusion`, and the visible app name is **YouTube Fusion**.
-
-## Important distinction
-
-There are two different Android packages in this project:
-
-- The companion Xposed module remains `io.github.fakeskyline.youtubefusion`.
-- The patched YouTube client is intended to become `youtube.fusion`.
-
-The NPatch module is scoped for both the original and intended renamed package. Merely changing the scope does not rewrite the YouTube APK. Package rewriting must update the binary manifest, package references, authorities, permissions and any package-bound integrations; it also changes app-signature identity and may affect Google sign-in, casting, Play services and updates. The current workflow builds the module APK/AAB and downloads the NPatch CLI; it does not yet emit a renamed YouTube APK.
-
-## Build outputs
-
-- **Module APK** — install and enable in NPatch Manager.
-- **AAB** — optional app bundle; not installable directly.
-- **NPatch CLI JAR** — separate APK/APKS loader-injection tool, not the ad blocker.
-
-## Build
-
-Requires JDK 17 and Android SDK Platform 36.
-
-```bash
-gradle assembleRelease bundleRelease
-```
-
-Artifacts are generated under `app/build/outputs/`.
-
-## Current verification
-
-The module logs when either `com.google.android.youtube` or `youtube.fusion` is loaded. It currently installs no ad-removal hooks. Do not treat a successful module build or a log entry as proof that ads are blocked.
+Direct APK modification project based on the user's YouTube 21.13.164 universal APK.
 
 ## Target
+- App label: `YouTube Fusion`
+- Android applicationId / manifest package: `Fusion.YouTube`
+- Input: APK attached to this repository's GitHub Release tag `base`
+- Output: signed APK in the GitHub Actions artifact
 
-| Component | Value |
-|---|---|
-| Input YouTube version | `21.13.164` |
-| Input package | `com.google.android.youtube` |
-| Intended patched package | `youtube.fusion` |
-| Intended visible name | `YouTube Fusion` |
-| Module package | `io.github.fakeskyline.youtubefusion` |
-| Framework | NPatch / Vector |
-| libxposed API | 102 |
-| Minimum Android | 9 (API 28) |
+## Pipeline
+1. Download the exact APK from release `base`.
+2. Decompile with JADX for readable Java/source analysis.
+3. Decode with Apktool for editable manifest, resources and Smali.
+4. Check Morphe patch compatibility against the exact YouTube version.
+5. Apply Hide ads and Custom branding only when explicitly compatible.
+6. Rewrite manifest package and app label, rebuild, align, sign and verify.
+7. Upload APK, JADX export and Apktool project as artifacts.
 
-## Planned implementation
+JADX is for analysis; it does not compile Java back into DEX. Smali/Apktool and the bytecode patcher are used for APK modification.
 
-1. Inspect exact DEX fingerprints and resource IDs from the supplied 21.13.164 APK.
-2. Implement and test version-gated hooks for player ads, feed/search ads, Shorts promotions and Premium upsells.
-3. Add SponsorBlock as a separate optional feature.
-4. Implement and validate the YouTube APK package/name rewrite.
-5. Build and verify the final patched APK, not just the companion module.
+## Safety checks
+The workflow must fail if Hide ads is incompatible or if zero patches were applied. It must not publish an unchanged APK as ad-free. Changing package identity can affect Google sign-in, casting, notifications, deep links and Play services.
 
-Unknown method signatures must fail closed rather than hook guessed methods.
-
-Independent community project; not affiliated with Google or YouTube.
+Run **Actions → Build YouTube Fusion → Run workflow**.
