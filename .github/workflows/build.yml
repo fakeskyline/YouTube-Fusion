@@ -1,55 +1,59 @@
-name: Build YouTube Fusion
+name: Build YouTube Fusion APK
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  inspect-and-patch:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK
-        uses: actions/setup-java@v5
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '21'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.13"
-
-      - name: Accept Android SDK licenses and install packages
-        run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
-
-      - name: Build APK and AAB
-        run: gradle --no-daemon clean assembleRelease bundleRelease
-
-      - name: Download current official NPatch CLI JAR
+      - name: Download base YouTube APK from release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p build/npatch
-          gh release download --repo 7723mod/NPatch --pattern 'jar-*-release.jar' --dir build/npatch
+          gh release download base --repo "${GITHUB_REPOSITORY}" --pattern '*.apk' --dir input
+          ls -lh input
 
-      - name: Upload build artifacts
+      - name: Download Morphe Desktop CLI and patch bundle
+        run: |
+          mkdir -p tools patches
+          curl -fL https://github.com/MorpheApp/morphe-desktop/releases/download/v2.3.0/morphe-desktop-2.3.0-all.jar -o tools/morphe.jar
+          curl -fL https://github.com/MorpheApp/morphe-patches/releases/download/v2.3.0/patches-2.3.0.mpp -o patches/patches.mpp
+          ls -lh tools/morphe.jar patches/patches.mpp
+
+      - name: Inspect available YouTube patches
+        run: |
+          java -jar tools/morphe.jar list-patches --patches patches/patches.mpp --filter-package-name com.google.android.youtube --with-versions --with-options > patch-list.txt
+          cat patch-list.txt
+
+      - name: Patch YouTube with ad blocking
+        run: |
+          APK="$(find input -maxdepth 1 -name '*.apk' -print -quit)"
+          test -n "$APK"
+          java -jar tools/morphe.jar patch --patches patches/patches.mpp --enable "Hide ads" --enable "Custom branding" --options customName="YouTube Fusion" --out output/YouTube-Fusion.apk "$APK"
+
+      - name: Upload diagnostic and APK artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: YouTube-Fusion-${{ github.sha }}
+          name: YouTube-Fusion-build-${{ github.run_number }}
           path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
-            build/npatch/*.jar
-          if-no-files-found: error
+            output/*.apk
+            patch-list.txt
+          if-no-files-found: warn
           retention-days: 14
