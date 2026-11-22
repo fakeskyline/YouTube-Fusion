@@ -2,7 +2,7 @@
 
 An experimental Xposed module for the official YouTube Android app, designed for NPatch / Vector (libxposed API 102).
 
-**Current state: project scaffold only. Ad blocking is not implemented yet.** The first target is YouTube `21.46.522` (`com.google.android.youtube`). No YouTube APK is bundled or redistributed.
+**Current state: project scaffold only. Ad blocking is not implemented yet.** The first verified research target is YouTube `21.13.164` (`com.google.android.youtube`), because the current Morphe/ReVanced patch source explicitly lists it as compatible. Your installed `21.46.522` is outside that published compatibility range. No YouTube APK is bundled or redistributed.
 
 ## Build outputs
 
@@ -32,7 +32,7 @@ The current build only verifies that the module is loaded into the target proces
 
 ## Planned implementation
 
-1. Extract and inspect the user's exact YouTube 21.46.522 APK/split set; record DEX signatures and build fingerprint.
+1. Extract and inspect the user's exact YouTube 21.46.522 APK/split set; record DEX signatures and build fingerprint for `21.13.164`.
 2. Implement version-gated hooks for video ads, feed/search ads, sponsored Shorts and Premium upsells.
 3. Add SponsorBlock segment skipping as a separate opt-in feature (community-submitted segments are not the same thing as YouTube's own ads).
 4. Add settings, diagnostics and regression checks. Unknown signatures must fail closed rather than hook guessed methods.
@@ -47,7 +47,7 @@ The current build only verifies that the module is loaded into the target proces
 | Framework | NPatch / Vector |
 | Minimum Android | 9 (API 28) |
 
-Compatibility is not certified until the hooks have been tested on the exact APK and device.
+The upstream patch source lists `21.13.164` in its supported range (`21.13.164 ~ 20.05.46`). This is evidence for the upstream bytecode patch bundle, not proof that our separate NPatch Xposed module hooks will work unchanged. Our module still needs its own DEX inspection and runtime testing.
 
 ## Disclaimer
 
