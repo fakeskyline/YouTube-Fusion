@@ -1,15 +1,23 @@
 # YouTube Fusion
 
-An experimental Xposed module for the official YouTube Android app, designed for NPatch / Vector (libxposed API 102).
+An experimental NPatch / libxposed module (API 102) for a separately patched YouTube APK.
 
-**Current state: project scaffold only. Ad blocking is not implemented yet.** The first verified research target is YouTube `21.13.164` (`com.google.android.youtube`), because the current Morphe/ReVanced patch source explicitly lists it as compatible. Your installed `21.46.522` is outside that published compatibility range. No YouTube APK is bundled or redistributed.
+**Current state: buildable module scaffold; ad blocking and APK package rewriting are not implemented yet.** The selected input is the user's YouTube 21.13.164 APK. The intended output package ID is `youtube.fusion`, and the visible app name is **YouTube Fusion**.
+
+## Important distinction
+
+There are two different Android packages in this project:
+
+- The companion Xposed module remains `io.github.fakeskyline.youtubefusion`.
+- The patched YouTube client is intended to become `youtube.fusion`.
+
+The NPatch module is scoped for both the original and intended renamed package. Merely changing the scope does not rewrite the YouTube APK. Package rewriting must update the binary manifest, package references, authorities, permissions and any package-bound integrations; it also changes app-signature identity and may affect Google sign-in, casting, Play services and updates. The current workflow builds the module APK/AAB and downloads the NPatch CLI; it does not yet emit a renamed YouTube APK.
 
 ## Build outputs
 
-- **APK** — installable Xposed module. This is the file to install and enable in NPatch Manager.
-- **AAB** — optional Android App Bundle for publishing the companion/module app; it is not installable directly and is not a patch.
-- **NPatch JAR** — the separate NPatch command-line patching tool. CI downloads the current official release as a build artifact; it is not a module and is not embedded in the app.
-- **AAR** — optional library dependency, only needed if a module settings UI uses NPatch Remote API.
+- **Module APK** — install and enable in NPatch Manager.
+- **AAB** — optional app bundle; not installable directly.
+- **NPatch CLI JAR** — separate APK/APKS loader-injection tool, not the ad blocker.
 
 ## Build
 
@@ -21,34 +29,31 @@ gradle assembleRelease bundleRelease
 
 Artifacts are generated under `app/build/outputs/`.
 
-## Install / test
+## Current verification
 
-1. Install the generated module APK.
-2. In NPatch Manager, enable **YouTube Fusion** and set YouTube as its scope.
-3. Force-stop YouTube and launch it again.
-4. Inspect NPatch/Xposed logs for the `YouTubeFusion` tag.
+The module logs when either `com.google.android.youtube` or `youtube.fusion` is loaded. It currently installs no ad-removal hooks. Do not treat a successful module build or a log entry as proof that ads are blocked.
 
-The current build only verifies that the module is loaded into the target process. It does not remove ads yet.
+## Target
+
+| Component | Value |
+|---|---|
+| Input YouTube version | `21.13.164` |
+| Input package | `com.google.android.youtube` |
+| Intended patched package | `youtube.fusion` |
+| Intended visible name | `YouTube Fusion` |
+| Module package | `io.github.fakeskyline.youtubefusion` |
+| Framework | NPatch / Vector |
+| libxposed API | 102 |
+| Minimum Android | 9 (API 28) |
 
 ## Planned implementation
 
-1. Extract and inspect the user's exact YouTube 21.46.522 APK/split set; record DEX signatures and build fingerprint for `21.13.164`.
-2. Implement version-gated hooks for video ads, feed/search ads, sponsored Shorts and Premium upsells.
-3. Add SponsorBlock segment skipping as a separate opt-in feature (community-submitted segments are not the same thing as YouTube's own ads).
-4. Add settings, diagnostics and regression checks. Unknown signatures must fail closed rather than hook guessed methods.
+1. Inspect exact DEX fingerprints and resource IDs from the supplied 21.13.164 APK.
+2. Implement and test version-gated hooks for player ads, feed/search ads, Shorts promotions and Premium upsells.
+3. Add SponsorBlock as a separate optional feature.
+4. Implement and validate the YouTube APK package/name rewrite.
+5. Build and verify the final patched APK, not just the companion module.
 
-## Compatibility
+Unknown method signatures must fail closed rather than hook guessed methods.
 
-| Component | Target |
-|---|---|
-| YouTube package | `com.google.android.youtube` |
-| YouTube version | `21.46.522` |
-| Module API | libxposed 102 |
-| Framework | NPatch / Vector |
-| Minimum Android | 9 (API 28) |
-
-The upstream patch source lists `21.13.164` in its supported range (`21.13.164 ~ 20.05.46`). This is evidence for the upstream bytecode patch bundle, not proof that our separate NPatch Xposed module hooks will work unchanged. Our module still needs its own DEX inspection and runtime testing.
-
-## Disclaimer
-
-Independent community project. Not affiliated with Google or YouTube. Use at your own risk.
+Independent community project; not affiliated with Google or YouTube.
