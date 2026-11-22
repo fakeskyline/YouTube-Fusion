@@ -6,7 +6,8 @@ import io.github.libxposed.api.XposedModule;
 
 public final class ModuleMain extends XposedModule {
     private static final String TAG = "YouTubeFusion";
-    private static final String TARGET_PACKAGE = "com.google.android.youtube";
+    private static final String ORIGINAL_PACKAGE = "com.google.android.youtube";
+    private static final String FUSION_PACKAGE = "youtube.fusion";
 
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
@@ -19,15 +20,16 @@ public final class ModuleMain extends XposedModule {
 
     @Override
     public void onPackageLoaded(PackageLoadedParam param) {
-        if (!TARGET_PACKAGE.equals(param.getPackageName())) {
+        String packageName = param.getPackageName();
+        if (!ORIGINAL_PACKAGE.equals(packageName) && !FUSION_PACKAGE.equals(packageName)) {
             return;
         }
 
-        log(Log.INFO, TAG, "YouTube process attached: "
-                + param.getProcessName()
+        log(Log.INFO, TAG, "Target package attached: " + packageName
+                + "; firstPackage=" + param.isFirstPackage()
                 + "; classLoader=" + param.getDefaultClassLoader());
 
-        // Ad-removal hooks will be installed here only after the exact
-        // YouTube 21.46.522 DEX signatures have been inspected and verified.
+        // Version-specific ad hooks are installed only after their DEX
+        // fingerprints have been verified for the exact target APK.
     }
 }
