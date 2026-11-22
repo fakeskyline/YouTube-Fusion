@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -53,6 +53,12 @@ jobs:
           grep -RniE 'ad.?service|ad.?overlay|promoted|sponsored|advertis' work/jadx/sources > work/ad-symbol-hits.txt || true
           zip -qr output/jadx-source.zip work/jadx work/ad-symbol-hits.txt
           zip -qr output/apktool-project.zip work/apktool
+
+      - name: Publish decompiled sources to repository Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload base output/jadx-source.zip output/apktool-project.zip --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Download Morphe patcher and patches
         run: |
